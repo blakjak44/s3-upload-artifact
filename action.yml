@@ -1,0 +1,18 @@
+name: S3 Upload Artifact
+description: Upload artifacts to Amazon S3.
+author: blakjak44@gmail.com
+
+inputs:
+  bucket:
+  aws_access_key_id:
+    required: false
+    type: string
+    description: The access key ID to access the bucket (if required).
+  aws_secret_access_key:
+    required: false
+    type: string
+    description: Secret access key to access the bucket (if required).
+
+runs:
+  using: 'node16'
+  main: 'dist/index.js'
