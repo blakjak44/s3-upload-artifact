@@ -1,4 +1,4 @@
-import { join, relative, resolve } from 'path'
+import { join, relative, resolve, parse } from 'path'
 import { stat } from 'fs/promises'
 import { createReadStream } from 'fs'
 import zlib from 'zlib'
@@ -183,9 +183,10 @@ async function run(): Promise<void> {
     const relativePath = relative(artifactPath, filepath)
     const key = `${artifactPrefix}/${relativePath}`
 
-    const gzipper = zlib.createGzip()
     const fstream = createReadStream(filepath)
-    const stream = fstream.pipe(gzipper)
+    const stream = gzipExemptFileExtensions.includes(parse(filepath).ext)
+      ? fstream
+      : fstream.pipe(zlib.createGzip())
 
     if (size > multipartThreshold) {
       const command = new CreateMultipartUploadCommand({
