@@ -185,8 +185,12 @@ async function run(): Promise<void> {
   core.info('Artifact name is valid!')
   core.info(`Container for artifact "${name}" successfully created. Starting upload of file(s)`)
 
+  core.debug(`Client config: ${JSON.stringify(clientConfig)}`)
+
   const progressLogger = new ProgressLogger(count, size)
   const client = new S3Client(clientConfig)
+
+  core.debug(`Initialized client.`)
 
   for (const entry of stats) {
     const { size, filepath } = entry
