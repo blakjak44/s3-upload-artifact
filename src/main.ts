@@ -145,6 +145,14 @@ async function run(): Promise<void> {
 
   const clientConfig: S3ClientConfig = { region }
 
+  core.debug(`region: ${region}`)
+  core.debug(`accessKeyId: ${accessKeyId}`)
+  core.debug(`secretAccessKey: ${secretAccessKey}`)
+  core.debug(`bucket: ${bucket}`)
+  core.debug(`scope: ${scope}`)
+  core.debug(`name: ${name}`)
+  core.debug(`artifactPath: ${artifactPath}`)
+
   if (accessKeyId && secretAccessKey) {
     clientConfig.credentials = {
       accessKeyId,
