@@ -32,12 +32,14 @@ const gzipExemptFileExtensions = [
   '.7z'
 ]
 
-process.on('unhandledRejection', handleError)
-run().catch((error) => handleError(error))
-
-
 const multipartThreshold = 6 * 1024 ** 2  // 6MB
 const multipartChunksize = 5 * 1024 ** 2 // 5MB
+
+
+function handleError(error: any): void {
+  console.error(error)
+  core.setFailed(`Artifact upload failed: ${error}`)
+}
 
 
 const getArtifactStats = async (fileOrDirectory: string) => {
@@ -274,8 +276,6 @@ async function run(): Promise<void> {
   core.info(`Artifact ${name} has been successfully uploaded!`)
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function handleError(error: any): void {
-  console.error(error)
-  core.setFailed(`Artifact upload failed: ${error}`)
-}
+
+process.on('unhandledRejection', handleError)
+run().catch((error) => handleError(error))

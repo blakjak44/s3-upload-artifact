@@ -3,7 +3,6 @@ description: Upload artifacts to Amazon S3.
 author: blakjak44@gmail.com
 
 inputs:
-  bucket:
   aws_access_key_id:
     required: false
     type: string
@@ -12,6 +11,23 @@ inputs:
     required: false
     type: string
     description: Secret access key to access the bucket (if required).
+  aws_region:
+    required: false
+    type: string
+    default: us-west-2
+  bucket:
+    required: true
+    type: string
+  scope:
+    required: false
+    type: string
+    default: run
+  name:
+    required: true
+    type: string
+  path:
+    required: true
+    type: string
 
 runs:
   using: 'node16'
