@@ -23,8 +23,9 @@ inputs:
     type: string
     default: run
   name:
-    required: true
+    required: false
     type: string
+    default: artifact
   path:
     required: true
     type: string
