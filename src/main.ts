@@ -198,6 +198,9 @@ async function run(): Promise<void> {
       ? fstream
       : fstream.pipe(zlib.createGzip())
 
+    core.debug(`Proecessing file ${filepath}`)
+    core.debug(`File byte size: ${size}; Multipart threshold: ${multipartThreshold}`)
+
     if (size > multipartThreshold) {
       const command = new CreateMultipartUploadCommand({
         // ContentEncoding: 'gzip',
