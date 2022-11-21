@@ -200,7 +200,7 @@ async function run(): Promise<void> {
 
     if (size > multipartThreshold) {
       const command = new CreateMultipartUploadCommand({
-        ContentEncoding: 'gzip',
+        // ContentEncoding: 'gzip',
         Bucket: bucket,
         Key: key,
       })
@@ -260,7 +260,7 @@ async function run(): Promise<void> {
 
     } else {
       const command = new PutObjectCommand({
-        ContentEncoding: 'gzip',
+        // ContentEncoding: 'gzip',
         Bucket: bucket,
         Key: key,
         Body: stream,
