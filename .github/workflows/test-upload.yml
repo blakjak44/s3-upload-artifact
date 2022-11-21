@@ -1,0 +1,28 @@
+name: Upload Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Create artifacts
+        run: |
+          mkdir artifacts
+          content="This is the content of this artifact entry."
+          echo $content > artifacts/a.txt
+          echo $content > artifacts/b.txt
+          echo $content > artifacts/c.txt
+
+      - name: Upload artifacts
+        uses: ./
+        with:
+          aws_access_key_id: ${{ secrets.S3_ARTIFACT_AWS_ACCESS_KEY_ID }}
+          aws_secret_accesss_key: ${{ secrets.S3_ARTIFACT_AWS_SECRET_ACCESS_KEY }}
+          bucket: github-action-upload-test
+          path: artifacts
+
