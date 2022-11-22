@@ -78,105 +78,10 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-const path_1 = __nccwpck_require__(85622);
-const promises_1 = __nccwpck_require__(69225);
-const fs_1 = __nccwpck_require__(35747);
-const zlib_1 = __importDefault(__nccwpck_require__(78761));
 const core = __importStar(__nccwpck_require__(42186));
-const glob = __importStar(__nccwpck_require__(28090));
 const github = __importStar(__nccwpck_require__(95438));
-const client_s3_1 = __nccwpck_require__(19250);
-/**
- * GZipping certain files that are already compressed will likely not yield further size reductions. Creating large temporary gzip
- * files then will just waste a lot of time before ultimately being discarded (especially for very large files).
- * If any of these types of files are encountered then on-disk gzip creation will be skipped and the original file will be uploaded as-is
- */
-const gzipExemptFileExtensions = [
-    '.gzip',
-    '.zip',
-    '.tar.lz',
-    '.tar.gz',
-    '.tar.bz2',
-    '.7z'
-];
-const multipartThreshold = 6 * Math.pow(1024, 2); // 6MB
-const multipartChunksize = 5 * Math.pow(1024, 2); // 5MB
-function handleError(error) {
-    console.error(error);
-    core.setFailed(`Artifact upload failed: ${error}`);
-}
-const getArtifactStats = (fileOrDirectory) => __awaiter(void 0, void 0, void 0, function* () {
-    const inputStats = yield (0, promises_1.stat)(fileOrDirectory);
-    let stats;
-    let size;
-    let count;
-    if (inputStats.isDirectory()) {
-        const globber = yield glob.create((0, path_1.join)(fileOrDirectory, '**', '*'));
-        const files = yield globber.glob();
-        const allStats = yield Promise.all(files.map((file) => __awaiter(void 0, void 0, void 0, function* () {
-            const stats = yield (0, promises_1.stat)(file);
-            return {
-                filepath: (0, path_1.resolve)(file),
-                isFile: stats.isFile(),
-                size: stats.size,
-            };
-        })));
-        stats = allStats.filter((s) => s.isFile);
-        size = stats.reduce((i, { size }) => i + size, 0);
-        count = stats.length;
-    }
-    else {
-        stats = [{
-                filepath: (0, path_1.resolve)(fileOrDirectory),
-                isFile: true,
-                size: inputStats.size,
-            }];
-        size = inputStats.size;
-        count = 1;
-    }
-    return { stats, size, count };
-});
-class ProgressLogger {
-    constructor(fileTotal, totalBytes, debounceMs = 10000) {
-        this.fileCount = 0;
-        this.fileTotal = fileTotal;
-        this.byteCount = 0;
-        this.byteTotal = totalBytes;
-        this.debounce = debounceMs;
-        this.lastLogCall = Number(new Date()) - debounceMs;
-        this.pendingLogCall = null;
-    }
-    get message() {
-        const { fileCount, fileTotal, byteCount, byteTotal } = this;
-        const percentage = (byteCount / byteTotal).toFixed(1);
-        return `Total file count: ${fileTotal}`
-            + ' ---- '
-            + `Processed file #${fileCount} (${percentage}%)`;
-    }
-    update(bytes) {
-        this.byteCount += bytes;
-        this.fileCount++;
-        const now = Number(new Date());
-        const diff = now - this.lastLogCall;
-        if (diff < this.debounce) {
-            if (!this.pendingLogCall) {
-                this.pendingLogCall = setTimeout(() => {
-                    core.info(this.message);
-                    this.pendingLogCall = null;
-                    this.lastLogCall = Number(new Date());
-                }, this.debounce);
-            }
-        }
-        else {
-            core.info(this.message);
-            this.lastLogCall = now;
-        }
-    }
-}
+const s3_artifact_1 = __nccwpck_require__(90152);
 function run() {
     return __awaiter(this, void 0, void 0, function* () {
         const region = core.getInput('aws_region');
@@ -185,110 +90,18 @@ function run() {
         const bucket = core.getInput('bucket');
         const scope = core.getInput('scope');
         const name = core.getInput('name');
-        const artifactPath = core.getInput('path');
-        const { owner, repo } = github.context.repo;
-        const clientConfig = { region };
-        if (accessKeyId && secretAccessKey) {
-            clientConfig.credentials = {
-                accessKeyId,
-                secretAccessKey
-            };
-            core.debug('Using provided credentials.');
+        const path = core.getInput('path');
+        const client = new s3_artifact_1.S3ArtifactClient(region, accessKeyId, secretAccessKey);
+        const result = yield client.upload(bucket, scope, name, path, github.context);
+        if (!result) {
+            core.setFailed('Failed to upload artifact.');
         }
-        else if (accessKeyId === null) {
-            core.warning('AWS Access Key ID is required if providing an AWS Secret Access Key. '
-                + 'Ignoring provided AWS Secret Access Key.');
+        else {
+            core.info(`Artifact ${name} with ${result.count} files and total size of ${result.size} bytes was successfully uploaded.`);
         }
-        else if (secretAccessKey === null) {
-            core.warning('AWS Secret Access Key is required if providing an AWS Access Key ID. '
-                + 'Ignoring provided AWS Access Key ID.');
-        }
-        const artifactPrefix = scope === 'global'
-            ? `${owner}/${repo}/${name}`
-            : `${owner}/${repo}/${github.context.runId}/${name}`;
-        core.debug('Calculating artifact properties.');
-        const { stats, size, count } = yield getArtifactStats(artifactPath);
-        core.info(`With the provided path, there will be ${count} files uploaded`);
-        core.info('Starting artifact upload');
-        // TODO - Validate artifact name
-        core.info('Artifact name is valid!');
-        core.info(`Container for artifact "${name}" successfully created. Starting upload of file(s)`);
-        const progressLogger = new ProgressLogger(count, size);
-        const client = new client_s3_1.S3Client(clientConfig);
-        for (const entry of stats) {
-            const { size, filepath } = entry;
-            const relativePath = (0, path_1.relative)(artifactPath, filepath);
-            const key = `${artifactPrefix}/${relativePath}`;
-            const fstream = (0, fs_1.createReadStream)(filepath);
-            const stream = gzipExemptFileExtensions.includes((0, path_1.parse)(filepath).ext)
-                ? fstream
-                : fstream.pipe(zlib_1.default.createGzip());
-            if (size > multipartThreshold) {
-                const command = new client_s3_1.CreateMultipartUploadCommand({
-                    ContentEncoding: 'gzip',
-                    Bucket: bucket,
-                    Key: key,
-                });
-                const response = yield client.send(command);
-                const { UploadId } = response;
-                const multipartConfig = {
-                    UploadId,
-                    Bucket: bucket,
-                    Key: key,
-                };
-                stream.pause();
-                let chunk;
-                let chunkNumber = 1;
-                let byteCount = 0;
-                try {
-                    while (null !== (chunk = stream.read(multipartChunksize))) {
-                        const { length } = chunk;
-                        const command = new client_s3_1.UploadPartCommand(Object.assign({ Body: chunk, ContentLength: length, PartNumber: chunkNumber++ }, multipartConfig));
-                        yield client.send(command);
-                        byteCount += length;
-                        const percentage = (byteCount / size).toFixed(1);
-                        core.info(`Uploaded ${filepath} (${percentage}%) bytes ${byteCount}:${size}`);
-                    }
-                }
-                catch (error) {
-                    // TODO - Ensure correct error handling.
-                    const abort = new client_s3_1.AbortMultipartUploadCommand(Object.assign({}, multipartConfig));
-                    yield client.send(abort);
-                    throw error;
-                }
-                finally {
-                    stream.close();
-                }
-                const complete = new client_s3_1.CompleteMultipartUploadCommand(Object.assign({}, multipartConfig));
-                yield client.send(complete);
-            }
-            else {
-                const command = new client_s3_1.PutObjectCommand({
-                    ContentEncoding: 'gzip',
-                    Bucket: bucket,
-                    Key: key,
-                    Body: stream,
-                    // ChecksumSHA256: ,
-                });
-                // TODO - Add retry handler
-                try {
-                    yield client.send(command);
-                }
-                catch (error) {
-                    throw error;
-                }
-                finally {
-                    stream.close();
-                }
-            }
-            progressLogger.update(size);
-        }
-        core.info('File upload process has finished.');
-        core.info(`Artifact ${name} has been successfully uploaded!`);
     });
 }
-process.on('unhandledRejection', handleError);
-run().catch((error) => handleError(error));
+run();
 
 
 /***/ }),
@@ -61124,6 +60937,591 @@ function onceStrict (fn) {
 
 /***/ }),
 
+/***/ 90152:
+/***/ ((__unused_webpack_module, __webpack_exports__, __nccwpck_require__) => {
+
+"use strict";
+// ESM COMPAT FLAG
+__nccwpck_require__.r(__webpack_exports__);
+
+// EXPORTS
+__nccwpck_require__.d(__webpack_exports__, {
+  "S3ArtifactClient": () => (/* binding */ S3ArtifactClient)
+});
+
+// EXTERNAL MODULE: external "path"
+var external_path_ = __nccwpck_require__(85622);
+;// CONCATENATED MODULE: external "fs/promises"
+const promises_namespaceObject = require("fs/promises");
+// EXTERNAL MODULE: external "fs"
+var external_fs_ = __nccwpck_require__(35747);
+;// CONCATENATED MODULE: external "node:crypto"
+const external_node_crypto_namespaceObject = require("node:crypto");
+;// CONCATENATED MODULE: external "node:stream"
+const external_node_stream_namespaceObject = require("node:stream");
+// EXTERNAL MODULE: external "util"
+var external_util_ = __nccwpck_require__(31669);
+// EXTERNAL MODULE: external "zlib"
+var external_zlib_ = __nccwpck_require__(78761);
+var external_zlib_default = /*#__PURE__*/__nccwpck_require__.n(external_zlib_);
+// EXTERNAL MODULE: ./node_modules/@actions/core/lib/core.js
+var core = __nccwpck_require__(42186);
+// EXTERNAL MODULE: ./node_modules/@aws-sdk/client-s3/dist-cjs/index.js
+var dist_cjs = __nccwpck_require__(19250);
+// EXTERNAL MODULE: ./node_modules/@actions/glob/lib/glob.js
+var glob = __nccwpck_require__(28090);
+;// CONCATENATED MODULE: ./node_modules/s3-artifact/dist/index.js
+
+
+
+
+
+
+
+
+
+
+
+
+/******************************************************************************
+Copyright (c) Microsoft Corporation.
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
+AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS SOFTWARE.
+***************************************************************************** */
+
+function __awaiter(thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+}
+
+/**
+ * Gather stats for local artifact file(s).
+ *
+ * @param path - Array of glob patterns joined by newlines.
+ */
+function getLocalArtifactStats(path) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const entries = [];
+        let totalSize = 0;
+        const globber = yield glob.create(path);
+        const files = yield globber.glob();
+        for (const file of files) {
+            const stats = yield (0,promises_namespaceObject.stat)(file);
+            if (stats.isFile()) {
+                const filepath = (0,external_path_.resolve)(file);
+                const { size } = stats;
+                totalSize += size;
+                entries.push({ filepath, size });
+            }
+        }
+        if (!entries.length) {
+            throw Error('No files found within artifact path(s).');
+        }
+        return { entries, count: entries.length, size: totalSize };
+    });
+}
+/**
+ * Retrieve stats for remote files in existing artifact.
+ */
+function getRemoteArtifactStats(client, bucket, artifactPath) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const entries = [];
+        const list = new dist_cjs.ListObjectsV2Command({ Bucket: bucket, Prefix: artifactPath });
+        for (;;) {
+            const response = yield client.send(list);
+            const { Contents, NextContinuationToken } = response;
+            if (!Contents)
+                break;
+            entries.push(...Contents);
+            if (!NextContinuationToken)
+                break;
+            list.input.ContinuationToken = NextContinuationToken;
+        }
+        return { entries, count: entries.length };
+    });
+}
+
+/**
+ * Maximum file size before uploading a file in parts.
+ */
+const multipartThreshold = 16 * Math.pow(1024, 2); // 16 MB
+/**
+ * Multipart upload chunk size.
+ */
+const multipartChunksize = 8 * Math.pow(1024, 2); // 8 MB
+
+const pipe$1 = (0,external_util_.promisify)(external_node_stream_namespaceObject.pipeline);
+/**
+ * GZipping certain files that are already compressed will likely not yield further size reductions.
+ * Creating large temporary gzip files then will just waste a lot of time before ultimately being
+ * discarded (especially for very large files). If any of these types of files are encountered
+ * then on-disk gzip creation will be skipped and the original file will be uploaded as-is
+ */
+const gzipExemptFileExtensions = [
+    '.gzip',
+    '.zip',
+    '.tar.lz',
+    '.tar.gz',
+    '.tar.bz2',
+    '.7z'
+];
+/**
+ * Compress the input file with GZIP compression.
+ *
+ * If the compressed output is not smaller than the original input size, then
+ * the original file will be returned.
+ *
+ * @param filepath - Input filepath.
+ * @param size - The input file size in bytes.
+ * @param tempFilepath - Temporary filepath.
+ * @param autoDelete - Whether to automatically cleanup the tempfile on stream close.
+ */
+function compressIfPossible(filepath, size, tempFilepath, autoDelete = true) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const absoluteFilepath = (0,external_path_.resolve)(filepath);
+        const absoluteTempFilepath = (0,external_path_.resolve)(tempFilepath);
+        const { ext } = (0,external_path_.parse)(absoluteFilepath);
+        // File is already compressed
+        if (gzipExemptFileExtensions.includes(ext)) {
+            return {
+                filepath: absoluteFilepath,
+                stream: (0,external_fs_.createReadStream)(absoluteFilepath),
+                size,
+            };
+        }
+        // If small enough, compress in-memory
+        const result = size <= multipartThreshold
+            ? yield compressInMemory(absoluteFilepath, size)
+            : yield compressOnDisk(absoluteFilepath, tempFilepath, size);
+        if (autoDelete) {
+            result.stream.on('close', () => __awaiter(this, void 0, void 0, function* () {
+                if ((0,external_fs_.existsSync)(tempFilepath)) {
+                    (0,external_fs_.rm)(absoluteTempFilepath, (err) => {
+                        if (err) {
+                            console.error(`Failed to delete tempfile: ${absoluteTempFilepath}`);
+                        }
+                    });
+                }
+            }));
+        }
+        return result;
+    });
+}
+function compressInMemory(filepath, size) {
+    return __awaiter(this, void 0, void 0, function* () {
+        return new Promise((resolve, reject) => {
+            const chunks = [];
+            const source = (0,external_fs_.createReadStream)(filepath);
+            const gzip = external_zlib_default().createGzip();
+            const stream = source.pipe(gzip);
+            stream.on('data', (data) => { chunks.push(data); });
+            stream.on('end', () => {
+                const buffer = Buffer.concat(chunks);
+                const compressedSize = buffer.length;
+                let result;
+                if (compressedSize < size) {
+                    const stream = external_node_stream_namespaceObject.Readable.from(buffer);
+                    stream.close = () => {
+                        // Noop
+                    };
+                    result = {
+                        filepath,
+                        stream,
+                        size: compressedSize,
+                        encoding: 'gzip'
+                    };
+                }
+                else {
+                    result = {
+                        filepath,
+                        stream: (0,external_fs_.createReadStream)(filepath),
+                        size,
+                    };
+                }
+                resolve(result);
+            });
+            stream.on('error', reject);
+        });
+    });
+}
+function compressOnDisk(filepath, tempFilepath, size) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const source = (0,external_fs_.createReadStream)(filepath);
+        const gzip = external_zlib_default().createGzip();
+        const destination = (0,external_fs_.createWriteStream)(tempFilepath);
+        yield pipe$1(source, gzip, destination);
+        const { size: compressedSize } = yield (0,promises_namespaceObject.stat)(tempFilepath);
+        let result;
+        if (compressedSize < size) {
+            result = {
+                filepath,
+                stream: (0,external_fs_.createReadStream)(tempFilepath),
+                size: compressedSize,
+                encoding: 'gzip'
+            };
+        }
+        else {
+            result = {
+                filepath,
+                stream: (0,external_fs_.createReadStream)(filepath),
+                size,
+            };
+        }
+        return result;
+    });
+}
+
+/**
+ * Validate an artifact name.
+ *
+ * @param name - The artifact name.
+ */
+function validateArtifactName(name) {
+    const byteLength = Buffer.byteLength(name, 'utf8');
+    if (byteLength > 1024) {
+        throw Error('Artifact name is too long.');
+    }
+}
+
+/**
+ * Taken from: https://github.com/actions/toolkit/blob/main/packages/artifact/src/internal/status-reporter.ts
+ */
+/**
+ * Status Reporter that displays information about the progress/status of an artifact
+ * that is being uploaded or downloaded.
+ *
+ * Variable display time that can be adjusted using the displayFrequencyInMilliseconds variable.
+ *
+ * The total status of the upload/download gets displayed according to this value.
+ *
+ * If there is a large file that is being uploaded, extra information about the individual
+ * status can also be displayed using the updateLargeFileStatus function.
+ *
+ */
+class StatusReporter {
+    constructor(displayFrequencyInMilliseconds) {
+        this.totalNumberOfFilesToProcess = 0;
+        this.processedCount = 0;
+        this.largeFiles = new Map();
+        this.totalFileStatus = undefined;
+        this.displayFrequencyInMilliseconds = displayFrequencyInMilliseconds;
+    }
+    setTotalNumberOfFilesToProcess(fileTotal) {
+        this.totalNumberOfFilesToProcess = fileTotal;
+        this.processedCount = 0;
+    }
+    start() {
+        // displays information about the total upload/download status
+        this.totalFileStatus = setInterval(() => {
+            // display 1 decimal place without any rounding
+            const percentage = this.formatPercentage(this.processedCount, this.totalNumberOfFilesToProcess);
+            (0,core.info)(`Total file count: ${this.totalNumberOfFilesToProcess} ---- Processed file #${this.processedCount} (${percentage.slice(0, percentage.indexOf('.') + 2)}%)`);
+        }, this.displayFrequencyInMilliseconds);
+    }
+    // if there is a large file that is being uploaded in chunks, this is used to display extra information about the status of the upload
+    updateLargeFileStatus(fileName, chunkStartIndex, chunkEndIndex, totalUploadFileSize) {
+        // display 1 decimal place without any rounding
+        const percentage = this.formatPercentage(chunkEndIndex, totalUploadFileSize);
+        (0,core.info)(`Uploaded ${fileName} (${percentage.slice(0, percentage.indexOf('.') + 2)}%) bytes ${chunkStartIndex}:${chunkEndIndex}`);
+    }
+    stop() {
+        if (this.totalFileStatus) {
+            clearInterval(this.totalFileStatus);
+        }
+    }
+    incrementProcessedCount() {
+        this.processedCount++;
+    }
+    formatPercentage(numerator, denominator) {
+        // toFixed() rounds, so use extra precision to display accurate information even though 4 decimal places are not displayed
+        return ((numerator / denominator) * 100).toFixed(4).toString();
+    }
+}
+
+const pipe = (0,external_util_.promisify)(external_node_stream_namespaceObject.pipeline);
+class S3ArtifactClient {
+    constructor(region, accessKeyId, secretAccessKey) {
+        const clientConfig = {};
+        if (region) {
+            clientConfig.region = region;
+        }
+        if (accessKeyId && secretAccessKey) {
+            clientConfig.credentials = {
+                accessKeyId,
+                secretAccessKey
+            };
+            core.debug('Using provided credentials.');
+        }
+        else if (accessKeyId === null) {
+            core.warning('AWS Access Key ID is required if providing an AWS Secret Access Key. '
+                + 'Ignoring provided AWS Secret Access Key.');
+        }
+        else if (secretAccessKey === null) {
+            core.warning('AWS Secret Access Key is required if providing an AWS Access Key ID. '
+                + 'Ignoring provided AWS Access Key ID.');
+        }
+        this._client = new dist_cjs.S3Client(clientConfig);
+        this._statusReporter = new StatusReporter(10000);
+    }
+    download(bucket, scope, name, path, context) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                const { owner, repo } = context.repo;
+                const artifactPrefix = scope === 'global'
+                    ? `${owner}/${repo}/${name}`
+                    : `${owner}/${repo}/${context.runId}/${name}`;
+                // TODO - Validate artifact path
+                // TODO - Validate extraction path
+                const stats = yield getRemoteArtifactStats(this._client, bucket, artifactPrefix);
+                const { entries, count } = stats;
+                core.info(`Found artifact "${name}" with ${count} files.`);
+                core.info('Starting download.');
+                this._statusReporter.setTotalNumberOfFilesToProcess(count);
+                this._statusReporter.start();
+                for (const entry of entries) {
+                    if (!entry.Key)
+                        continue;
+                    const relativePath = (0,external_path_.relative)(artifactPrefix, entry.Key);
+                    const destPath = (0,external_path_.resolve)(path, relativePath);
+                    const destDir = (0,external_path_.parse)(destPath).dir;
+                    const get = new dist_cjs.GetObjectCommand({
+                        Bucket: bucket,
+                        Key: entry.Key,
+                    });
+                    const response = yield this._client.send(get);
+                    if (!response.Body) {
+                        throw Error(`No response body for file: ${relativePath}`);
+                    }
+                    yield (0,promises_namespaceObject.mkdir)(destDir, { recursive: true });
+                    const destination = (0,external_fs_.createWriteStream)(destPath);
+                    const pipeline = [response.Body];
+                    if (response.ContentEncoding === 'gzip') {
+                        pipeline.push(external_zlib_default().createGunzip());
+                    }
+                    pipeline.push(destination);
+                    yield pipe(pipeline);
+                    core.debug(`Downloaded file: ${relativePath}`);
+                    this._statusReporter.incrementProcessedCount();
+                }
+                return stats;
+            }
+            catch (err) {
+                console.error(err);
+            }
+            finally {
+                this._statusReporter.stop();
+            }
+        });
+    }
+    upload(bucket, scope, name, path, context, checksum = true) {
+        return __awaiter(this, void 0, void 0, function* () {
+            try {
+                const stats = yield getLocalArtifactStats(path);
+                const { entries, count } = stats;
+                core.info(`With the provided path, there will be ${count} files uploaded`);
+                core.info('Starting artifact upload');
+                validateArtifactName(name);
+                core.info('Artifact name is valid!');
+                // TODO - Validate bucket (e.g. exists and is writable)
+                core.info(`Container for artifact "${name}" successfully created. `
+                    + 'Starting upload of file(s)');
+                const { owner, repo } = context.repo;
+                const artifactPrefix = scope === 'global'
+                    ? `${owner}/${repo}/${name}`
+                    : `${owner}/${repo}/${context.runId}/${name}`;
+                this._statusReporter.setTotalNumberOfFilesToProcess(count);
+                this._statusReporter.start();
+                for (const entry of entries) {
+                    const { filepath, size } = entry;
+                    core.debug(`Processing file: ${filepath}`);
+                    const absolutePath = (0,external_path_.resolve)(filepath);
+                    const absoluteDir = (0,external_path_.parse)(absolutePath).dir;
+                    const tempFilepath = absolutePath + '.artifact.gzip';
+                    const relativePath = (0,external_path_.relative)(absoluteDir, filepath);
+                    const key = `${artifactPrefix}/${relativePath}`;
+                    const uploadSource = yield compressIfPossible(absolutePath, size, tempFilepath);
+                    if (uploadSource.size > multipartThreshold) {
+                        yield this._uploadMultipart(uploadSource, bucket, key, checksum);
+                    }
+                    else {
+                        yield this._uploadSingle(uploadSource, bucket, key, checksum);
+                    }
+                    // Necessary to trigger auto cleanup of tempfile
+                    uploadSource.stream.close();
+                    this._statusReporter.incrementProcessedCount();
+                }
+                return stats;
+            }
+            catch (error) {
+                console.error(error);
+            }
+            finally {
+                this._statusReporter.stop();
+            }
+        });
+    }
+    _uploadSingle(source, bucket, key, checksum = true) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const { stream, encoding } = source;
+            return new Promise((resolve, reject) => {
+                const chunkBuffer = [];
+                stream.on('data', (data) => { chunkBuffer.push(data); });
+                stream.on('end', () => __awaiter(this, void 0, void 0, function* () {
+                    try {
+                        const body = Buffer.concat(chunkBuffer);
+                        const sha256 = checksum
+                            ? (0,external_node_crypto_namespaceObject.createHash)('sha256').update(body).digest('base64')
+                            : undefined;
+                        const command = new dist_cjs.PutObjectCommand({
+                            ContentEncoding: encoding,
+                            Bucket: bucket,
+                            Key: key,
+                            Body: body,
+                            ChecksumSHA256: sha256,
+                        });
+                        yield this._client.send(command);
+                        resolve();
+                    }
+                    catch (err) {
+                        reject(err);
+                    }
+                }));
+                stream.on('error', reject);
+            });
+        });
+    }
+    // TODO - Parallelize
+    _uploadMultipart(source, bucket, key, checksum = true) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const { filepath, stream, size, encoding } = source;
+            return new Promise((resolve, reject) => {
+                (() => __awaiter(this, void 0, void 0, function* () {
+                    const command = new dist_cjs.CreateMultipartUploadCommand({
+                        ContentEncoding: encoding,
+                        Bucket: bucket,
+                        Key: key,
+                        ChecksumAlgorithm: 'sha256',
+                    });
+                    let response;
+                    try {
+                        response = yield this._client.send(command);
+                    }
+                    catch (err) {
+                        return reject(err);
+                    }
+                    const { UploadId } = response;
+                    core.debug(`Multipart upload initiated with ID: ${UploadId}`);
+                    const multipartConfig = {
+                        UploadId,
+                        Bucket: bucket,
+                        Key: key,
+                    };
+                    let partNumber = 1;
+                    let byteCount = 0;
+                    let chunkByteCount = 0;
+                    const chunkBuffer = [];
+                    const completedParts = [];
+                    const uploadPart = () => __awaiter(this, void 0, void 0, function* () {
+                        if (!chunkBuffer.length)
+                            return;
+                        try {
+                            stream.pause();
+                            const chunk = Buffer.concat(chunkBuffer);
+                            const { length } = chunk;
+                            const sha256 = checksum
+                                ? (0,external_node_crypto_namespaceObject.createHash)('sha256').update(chunk).digest('base64')
+                                : undefined;
+                            const command = new dist_cjs.UploadPartCommand(Object.assign({ Body: chunk, ContentLength: length, PartNumber: partNumber, ChecksumSHA256: sha256 }, multipartConfig));
+                            const { ETag } = yield this._client.send(command);
+                            // TODO - Confirm whether ETag can be missing
+                            completedParts.push({ ETag: ETag, PartNumber: partNumber++, ChecksumSHA256: sha256 });
+                            core.debug(`Uploaded part ETag: ${ETag}`);
+                            this._statusReporter.updateLargeFileStatus(filepath, byteCount, byteCount += length, size);
+                            chunkByteCount = 0;
+                            chunkBuffer.length = 0;
+                            stream.resume();
+                        }
+                        catch (err) {
+                            return reject(err);
+                        }
+                    });
+                    stream.on('data', (data) => {
+                        chunkBuffer.push(data);
+                        const { length } = data;
+                        chunkByteCount += length;
+                        if (chunkByteCount >= multipartChunksize) {
+                            uploadPart();
+                        }
+                    });
+                    const abort = (err) => __awaiter(this, void 0, void 0, function* () {
+                        const retryMax = 10;
+                        let retry = 1;
+                        const abort = new dist_cjs.AbortMultipartUploadCommand(multipartConfig);
+                        const list = new dist_cjs.ListPartsCommand(multipartConfig);
+                        try {
+                            for (;;) {
+                                yield this._client.send(abort);
+                                const listResponse = yield this._client.send(list);
+                                if (!listResponse.Parts || !listResponse.Parts.length) {
+                                    break;
+                                }
+                                else if (++retry >= retryMax) {
+                                    throw Error(`Aborted upload part cleanup failed after ${retryMax} attempts.`);
+                                }
+                                // Wait for 1 second between retries
+                                yield new Promise((res) => setTimeout(res, 1000));
+                            }
+                        }
+                        catch (err2) {
+                            console.error(err2);
+                            core.warning('Failed to properly abort multipart upload, manual cleanup may be required.');
+                            core.warning(`Multipart Upload Properties: ${JSON.stringify(multipartConfig)}`);
+                        }
+                        finally {
+                            reject(err);
+                        }
+                    });
+                    stream.on('end', () => __awaiter(this, void 0, void 0, function* () {
+                        try {
+                            if (chunkBuffer.length) {
+                                yield uploadPart();
+                            }
+                            const complete = new dist_cjs.CompleteMultipartUploadCommand(Object.assign({ MultipartUpload: { Parts: completedParts } }, multipartConfig));
+                            yield this._client.send(complete);
+                        }
+                        catch (err) {
+                            core.error('Failed to complete multipart upload. Aborting.');
+                            abort(err);
+                        }
+                        resolve();
+                    }));
+                    stream.on('error', abort);
+                }))();
+            });
+        });
+    }
+}
+
+
+//# sourceMappingURL=index.js.map
+
+
+/***/ }),
+
 /***/ 14526:
 /***/ ((module) => {
 
@@ -62651,14 +63049,6 @@ module.exports = require("fs");
 
 /***/ }),
 
-/***/ 69225:
-/***/ ((module) => {
-
-"use strict";
-module.exports = require("fs/promises");
-
-/***/ }),
-
 /***/ 98605:
 /***/ ((module) => {
 
@@ -62796,6 +63186,46 @@ module.exports = require("zlib");
 /******/ 	}
 /******/ 	
 /************************************************************************/
+/******/ 	/* webpack/runtime/compat get default export */
+/******/ 	(() => {
+/******/ 		// getDefaultExport function for compatibility with non-harmony modules
+/******/ 		__nccwpck_require__.n = (module) => {
+/******/ 			var getter = module && module.__esModule ?
+/******/ 				() => (module['default']) :
+/******/ 				() => (module);
+/******/ 			__nccwpck_require__.d(getter, { a: getter });
+/******/ 			return getter;
+/******/ 		};
+/******/ 	})();
+/******/ 	
+/******/ 	/* webpack/runtime/define property getters */
+/******/ 	(() => {
+/******/ 		// define getter functions for harmony exports
+/******/ 		__nccwpck_require__.d = (exports, definition) => {
+/******/ 			for(var key in definition) {
+/******/ 				if(__nccwpck_require__.o(definition, key) && !__nccwpck_require__.o(exports, key)) {
+/******/ 					Object.defineProperty(exports, key, { enumerable: true, get: definition[key] });
+/******/ 				}
+/******/ 			}
+/******/ 		};
+/******/ 	})();
+/******/ 	
+/******/ 	/* webpack/runtime/hasOwnProperty shorthand */
+/******/ 	(() => {
+/******/ 		__nccwpck_require__.o = (obj, prop) => (Object.prototype.hasOwnProperty.call(obj, prop))
+/******/ 	})();
+/******/ 	
+/******/ 	/* webpack/runtime/make namespace object */
+/******/ 	(() => {
+/******/ 		// define __esModule on exports
+/******/ 		__nccwpck_require__.r = (exports) => {
+/******/ 			if(typeof Symbol !== 'undefined' && Symbol.toStringTag) {
+/******/ 				Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' });
+/******/ 			}
+/******/ 			Object.defineProperty(exports, '__esModule', { value: true });
+/******/ 		};
+/******/ 	})();
+/******/ 	
 /******/ 	/* webpack/runtime/compat */
 /******/ 	
 /******/ 	if (typeof __nccwpck_require__ !== 'undefined') __nccwpck_require__.ab = __dirname + "/";
