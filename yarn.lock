@@ -2,6 +2,16 @@
 # yarn lockfile v1
 
 
+"@actions/artifact@^1.1.0":
+  version "1.1.0"
+  resolved "https://registry.yarnpkg.com/@actions/artifact/-/artifact-1.1.0.tgz#762b2c05795accb464eaf803e7a2b4d6b325846d"
+  integrity sha512-shO+w/BAnzRnFhfsgUao8sxjByAMqDdfvek2LLKeCueBKXoTrAcp7U/hs9Fdx+z9g7Q0mbIrmHAzAAww4HK1bQ==
+  dependencies:
+    "@actions/core" "^1.2.6"
+    "@actions/http-client" "^2.0.1"
+    tmp "^0.2.1"
+    tmp-promise "^3.0.2"
+
 "@actions/core@^1.10.0", "@actions/core@^1.2.6":
   version "1.10.0"
   resolved "https://registry.yarnpkg.com/@actions/core/-/core-1.10.0.tgz#44551c3c71163949a2f06e94d9ca2157a0cfac4f"
@@ -4041,6 +4051,16 @@ run-parallel@^1.1.9:
   dependencies:
     queue-microtask "^1.2.2"
 
+s3-artifact@^0.0.1:
+  version "0.0.1"
+  resolved "https://registry.yarnpkg.com/s3-artifact/-/s3-artifact-0.0.1.tgz#f80ef7962e577feed18771dd7fe2c0b9bf7701e3"
+  integrity sha512-XxT2XaqfTn4aEvpP4FjDgL/L2B+bOY8onTKEURdsVPfZ6kUQCYwoTkyHxYtNP1dOEiKXXsTVKDupsGQNYqnJog==
+  dependencies:
+    "@actions/artifact" "^1.1.0"
+    "@actions/core" "^1.10.0"
+    "@actions/glob" "^0.3.0"
+    "@aws-sdk/client-s3" "^3.213.0"
+
 safe-buffer@~5.1.0, safe-buffer@~5.1.1:
   version "5.1.2"
   resolved "https://registry.yarnpkg.com/safe-buffer/-/safe-buffer-5.1.2.tgz#991ec69d296e0313747d59bdfd2b745c35f8828d"
@@ -4286,6 +4306,20 @@ throat@^6.0.1:
   version "6.0.1"
   resolved "https://registry.yarnpkg.com/throat/-/throat-6.0.1.tgz#d514fedad95740c12c2d7fc70ea863eb51ade375"
   integrity sha512-8hmiGIJMDlwjg7dlJ4yKGLK8EsYqKgPWbG3b4wjJddKNwc7N7Dpn08Df4szr/sZdMVeOstrdYSsqzX6BYbcB+w==
+
+tmp-promise@^3.0.2:
+  version "3.0.3"
+  resolved "https://registry.yarnpkg.com/tmp-promise/-/tmp-promise-3.0.3.tgz#60a1a1cc98c988674fcbfd23b6e3367bdeac4ce7"
+  integrity sha512-RwM7MoPojPxsOBYnyd2hy0bxtIlVrihNs9pj5SUvY8Zz1sQcQG2tG1hSr8PDxfgEB8RNKDhqbIlroIarSNDNsQ==
+  dependencies:
+    tmp "^0.2.0"
+
+tmp@^0.2.0, tmp@^0.2.1:
+  version "0.2.1"
+  resolved "https://registry.yarnpkg.com/tmp/-/tmp-0.2.1.tgz#8457fc3037dcf4719c251367a1af6500ee1ccf14"
+  integrity sha512-76SUhtfqR2Ijn+xllcI5P1oyannHNHByD80W1q447gU3mp9G9PSpGdWmjUOHRDPiHYacIk66W7ubDTuPF3BEtQ==
+  dependencies:
+    rimraf "^3.0.0"
 
 tmpl@1.0.5:
   version "1.0.5"
