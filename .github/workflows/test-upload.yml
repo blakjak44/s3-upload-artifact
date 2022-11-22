@@ -25,6 +25,7 @@ jobs:
           aws_secret_access_key: ${{ secrets.S3_ARTIFACT_AWS_SECRET_ACCESS_KEY }}
           aws_region: us-west-2
           bucket: github-action-upload-test
+          scope: global
           name: artifact-test
           path: artifacts
 
