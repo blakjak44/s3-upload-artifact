@@ -1,8 +1,10 @@
 name: S3 Upload Artifact
 description: Upload artifacts to Amazon S3.
-icon: arrow-up-circle
-color: orange
 author: blakjak44@gmail.com
+
+branding:
+  color: orange
+  icon: arrow-up-circle
 
 inputs:
   aws_access_key_id:
