@@ -1,6 +1,6 @@
 {
   "name": "s3-upload-artifact",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": false,
   "description": "A Github Action for uploading artifacts to Amazon S3.",
   "author": "blakjak44@gmail.com",
