@@ -26,7 +26,7 @@ async function run(): Promise<void> {
   if (!result) {
     core.setFailed('Failed to upload artifact.')
   } else {
-    core.info(`Artifact ${name} with ${result.count} files and total size of ${result.size} bytes was successfully uploaded.`)
+    core.info(`Artifact "${name}" with ${result.count} files and total size of ${result.size} bytes was successfully uploaded.`)
   }
 }
 
