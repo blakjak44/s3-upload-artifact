@@ -1,6 +1,7 @@
 name: S3 Upload Artifact
 description: Upload artifacts to Amazon S3.
 author: blakjak44@gmail.com
+icon: arrow-up-circle
 
 inputs:
   aws_access_key_id:
