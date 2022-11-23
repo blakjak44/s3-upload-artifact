@@ -4051,10 +4051,10 @@ run-parallel@^1.1.9:
   dependencies:
     queue-microtask "^1.2.2"
 
-s3-artifact@^0.0.2:
-  version "0.0.2"
-  resolved "https://registry.yarnpkg.com/s3-artifact/-/s3-artifact-0.0.2.tgz#e2cfa03006a7b5a330c2da496ea8ac4ff49de454"
-  integrity sha512-d7i/d6hOJrChD1B5IlQlZdZmCg0mpbTqpVqJ/oA3QOQ9o4S7IsCvuDgyYBBJ7V3zJENvrfkRFyit0p2PP0OPYA==
+s3-artifact@^0.0.5:
+  version "0.0.5"
+  resolved "https://registry.yarnpkg.com/s3-artifact/-/s3-artifact-0.0.5.tgz#a91c63e44a69d3201659e84da299912ac1f7f476"
+  integrity sha512-uQXtJUnajgcLBTkGGOMHOIc5IE29fmuYf4ktk0SoweY5/IrwrDrVYfmYbRE+U0CRXHWJ0CnZet4B6enPUPf+4w==
   dependencies:
     "@actions/artifact" "^1.1.0"
     "@actions/core" "^1.10.0"

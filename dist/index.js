@@ -97,7 +97,7 @@ function run() {
             core.setFailed('Failed to upload artifact.');
         }
         else {
-            core.info(`Artifact ${name} with ${result.count} files and total size of ${result.size} bytes was successfully uploaded.`);
+            core.info(`Artifact "${name}" with ${result.count} files and total size of ${result.size} bytes was successfully uploaded.`);
         }
     });
 }
@@ -61008,6 +61008,58 @@ function __awaiter(thisArg, _arguments, P, generator) {
     });
 }
 
+/** Taken from: https://github.com/actions/upload-artifact/blob/main/src/search.ts **/
+/**
+ * If multiple paths are specific, the least common ancestor (LCA) of the search paths is used as
+ * the delimiter to control the directory structure for the artifact. This function returns the LCA
+ * when given an array of search paths
+ *
+ * Example 1: The patterns `/foo/` and `/bar/` returns `/`
+ *
+ * Example 2: The patterns `~/foo/bar/*` and `~/foo/voo/two/*` and `~/foo/mo/` returns `~/foo`
+ */
+function getMultiPathLCA(searchPaths) {
+    if (searchPaths.length < 2) {
+        throw new Error('At least two search paths must be provided');
+    }
+    const commonPaths = new Array();
+    const splitPaths = new Array();
+    let smallestPathLength = Number.MAX_SAFE_INTEGER;
+    // split each of the search paths using the platform specific separator
+    for (const searchPath of searchPaths) {
+        core.debug(`Using search path ${searchPath}`);
+        const splitSearchPath = (0,external_path_.normalize)(searchPath).split(external_path_.sep);
+        // keep track of the smallest path length so that we don't accidentally later go out of bounds
+        smallestPathLength = Math.min(smallestPathLength, splitSearchPath.length);
+        splitPaths.push(splitSearchPath);
+    }
+    // on Unix-like file systems, the file separator exists at the beginning of the file path, make sure to preserve it
+    if (searchPaths[0].startsWith(external_path_.sep)) {
+        commonPaths.push(external_path_.sep);
+    }
+    let splitIndex = 0;
+    // function to check if the paths are the same at a specific index
+    function isPathTheSame() {
+        const compare = splitPaths[0][splitIndex];
+        for (let i = 1; i < splitPaths.length; i++) {
+            if (compare !== splitPaths[i][splitIndex]) {
+                // a non-common index has been reached
+                return false;
+            }
+        }
+        return true;
+    }
+    // loop over all the search paths until there is a non-common ancestor or we go out of bounds
+    while (splitIndex < smallestPathLength) {
+        if (!isPathTheSame()) {
+            break;
+        }
+        // if all are the same, add to the end result & increment the index
+        commonPaths.push(splitPaths[0][splitIndex]);
+        splitIndex++;
+    }
+    return (0,external_path_.join)(...commonPaths);
+}
 /**
  * Gather stats for local artifact file(s).
  *
@@ -61031,7 +61083,38 @@ function getLocalArtifactStats(path) {
         if (!entries.length) {
             throw Error('No files found within artifact path(s).');
         }
-        return { entries, count: entries.length, size: totalSize };
+        /** Taken and modified from: https://github.com/actions/upload-artifact/blob/main/src/search.ts **/
+        // Calculate the root directory for the artifact using the search paths that were utilized
+        const searchPaths = globber.getSearchPaths();
+        if (searchPaths.length > 1) {
+            core.info(`Multiple search paths detected. Calculating the least common ancestor of all paths`);
+            const lcaSearchPath = getMultiPathLCA(searchPaths);
+            core.info(`The least common ancestor is ${lcaSearchPath}. This will be the root directory of the artifact`);
+            return {
+                root: lcaSearchPath,
+                entries,
+                count: entries.length,
+                size: totalSize,
+            };
+        }
+        /*
+          Special case for a single file artifact that is uploaded without a directory or wildcard pattern. The directory structure is
+          not preserved and the root directory will be the single files parent directory
+        */
+        if (files.length === 1 && searchPaths[0] === files[0]) {
+            return {
+                root: (0,external_path_.dirname)(files[0]),
+                entries,
+                count: entries.length,
+                size: totalSize,
+            };
+        }
+        return {
+            root: files[0],
+            entries,
+            count: entries.length,
+            size: totalSize,
+        };
     });
 }
 /**
@@ -61112,6 +61195,7 @@ function compressIfPossible(filepath, size, tempFilepath, autoDelete = true) {
                 if ((0,external_fs_.existsSync)(tempFilepath)) {
                     (0,external_fs_.rm)(absoluteTempFilepath, (err) => {
                         if (err) {
+                            console.error(err);
                             console.error(`Failed to delete tempfile: ${absoluteTempFilepath}`);
                         }
                     });
@@ -61331,7 +61415,7 @@ class S3ArtifactClient {
         return __awaiter(this, void 0, void 0, function* () {
             try {
                 const stats = yield getLocalArtifactStats(path);
-                const { entries, count } = stats;
+                const { root, entries, count } = stats;
                 core.info(`With the provided path, there will be ${count} files uploaded`);
                 core.info('Starting artifact upload');
                 validateArtifactName(name);
@@ -61348,12 +61432,10 @@ class S3ArtifactClient {
                 for (const entry of entries) {
                     const { filepath, size } = entry;
                     core.debug(`Processing file: ${filepath}`);
-                    const absolutePath = (0,external_path_.resolve)(filepath);
-                    const absoluteDir = (0,external_path_.parse)(absolutePath).dir;
-                    const tempFilepath = absolutePath + '.artifact.gzip';
-                    const relativePath = (0,external_path_.relative)(absoluteDir, filepath);
+                    const tempFilepath = filepath + '.artifact.gzip';
+                    const relativePath = (0,external_path_.relative)((0,external_path_.dirname)(root), filepath);
                     const key = `${artifactPrefix}/${relativePath}`;
-                    const uploadSource = yield compressIfPossible(absolutePath, size, tempFilepath);
+                    const uploadSource = yield compressIfPossible(filepath, size, tempFilepath);
                     if (uploadSource.size > multipartThreshold) {
                         yield this._uploadMultipart(uploadSource, bucket, key, checksum);
                     }
