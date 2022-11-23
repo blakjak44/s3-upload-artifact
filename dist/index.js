@@ -61137,6 +61137,21 @@ function getRemoteArtifactStats(client, bucket, artifactPath) {
         return { entries, count: entries.length };
     });
 }
+/**
+ * Ensure path is S3 compatible.
+ */
+function toKey(path) {
+    return path.replace('\\', '/');
+}
+/**
+ * Ensure path is platform compatible.
+ */
+function toPlatformPath(key) {
+    if (process.platform === 'win32') {
+        return key.replace('/', '\\');
+    }
+    return key;
+}
 
 /**
  * Maximum file size before uploading a file in parts.
@@ -61380,8 +61395,8 @@ class S3ArtifactClient {
                     if (!entry.Key)
                         continue;
                     const relativePath = (0,external_path_.relative)(artifactPrefix, entry.Key);
-                    const destPath = (0,external_path_.resolve)(path, relativePath);
-                    const destDir = (0,external_path_.parse)(destPath).dir;
+                    const destPath = toPlatformPath((0,external_path_.resolve)(path, relativePath));
+                    const destDir = toPlatformPath((0,external_path_.parse)(destPath).dir);
                     const get = new dist_cjs.GetObjectCommand({
                         Bucket: bucket,
                         Key: entry.Key,
@@ -61434,7 +61449,7 @@ class S3ArtifactClient {
                     core.debug(`Processing file: ${filepath}`);
                     const tempFilepath = filepath + '.artifact.gzip';
                     const relativePath = (0,external_path_.relative)((0,external_path_.dirname)(root), filepath);
-                    const key = `${artifactPrefix}/${relativePath}`;
+                    const key = toKey(`${artifactPrefix}/${relativePath}`);
                     const uploadSource = yield compressIfPossible(filepath, size, tempFilepath);
                     if (uploadSource.size > multipartThreshold) {
                         yield this._uploadMultipart(uploadSource, bucket, key, checksum);
