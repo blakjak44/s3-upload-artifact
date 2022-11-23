@@ -61141,14 +61141,14 @@ function getRemoteArtifactStats(client, bucket, artifactPath) {
  * Ensure path is S3 compatible.
  */
 function toKey(path) {
-    return path.replace('\\', '/');
+    return path.replace(/\\/g, '/');
 }
 /**
  * Ensure path is platform compatible.
  */
 function toPlatformPath(key) {
     if (process.platform === 'win32') {
-        return key.replace('/', '\\');
+        return key.replace(/\//g, '\\');
     }
     return key;
 }
@@ -61407,12 +61407,13 @@ class S3ArtifactClient {
                     }
                     yield (0,promises_namespaceObject.mkdir)(destDir, { recursive: true });
                     const destination = (0,external_fs_.createWriteStream)(destPath);
-                    const pipeline = [response.Body];
+                    const streams = [response.Body];
                     if (response.ContentEncoding === 'gzip') {
-                        pipeline.push(external_zlib_default().createGunzip());
+                        streams.push(external_zlib_default().createGunzip());
                     }
-                    pipeline.push(destination);
-                    yield pipe(pipeline);
+                    streams.push(destination);
+                    core.debug(`Download pipeline: ${streams}`);
+                    yield pipe(streams);
                     core.debug(`Downloaded file: ${relativePath}`);
                     this._statusReporter.incrementProcessedCount();
                 }

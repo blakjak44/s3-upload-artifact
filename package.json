@@ -27,7 +27,7 @@
     "@actions/glob": "^0.3.0",
     "@aws-sdk/client-s3": "^3.213.0",
     "archiver": "^5.3.1",
-    "s3-artifact": "^0.0.6"
+    "s3-artifact": "^0.0.8"
   },
   "devDependencies": {
     "@types/node": "^18.11.0",
