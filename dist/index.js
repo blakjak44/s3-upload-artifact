@@ -81,7 +81,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 const core = __importStar(__nccwpck_require__(42186));
 const github = __importStar(__nccwpck_require__(95438));
-const s3_artifact_1 = __nccwpck_require__(90152);
+const s3_artifact_1 = __nccwpck_require__(65377);
 function run() {
     return __awaiter(this, void 0, void 0, function* () {
         const region = core.getInput('aws_region');
@@ -60937,7 +60937,7 @@ function onceStrict (fn) {
 
 /***/ }),
 
-/***/ 90152:
+/***/ 65377:
 /***/ ((__unused_webpack_module, __webpack_exports__, __nccwpck_require__) => {
 
 "use strict";
@@ -60957,10 +60957,8 @@ const promises_namespaceObject = require("fs/promises");
 var external_fs_ = __nccwpck_require__(35747);
 ;// CONCATENATED MODULE: external "node:crypto"
 const external_node_crypto_namespaceObject = require("node:crypto");
-;// CONCATENATED MODULE: external "node:stream"
-const external_node_stream_namespaceObject = require("node:stream");
-// EXTERNAL MODULE: external "util"
-var external_util_ = __nccwpck_require__(31669);
+;// CONCATENATED MODULE: external "node:stream/promises"
+const external_node_stream_promises_namespaceObject = require("node:stream/promises");
 // EXTERNAL MODULE: external "zlib"
 var external_zlib_ = __nccwpck_require__(78761);
 var external_zlib_default = /*#__PURE__*/__nccwpck_require__.n(external_zlib_);
@@ -60970,6 +60968,8 @@ var core = __nccwpck_require__(42186);
 var dist_cjs = __nccwpck_require__(19250);
 // EXTERNAL MODULE: ./node_modules/@actions/glob/lib/glob.js
 var glob = __nccwpck_require__(28090);
+;// CONCATENATED MODULE: external "node:stream"
+const external_node_stream_namespaceObject = require("node:stream");
 ;// CONCATENATED MODULE: ./node_modules/s3-artifact/dist/index.js
 
 
@@ -61162,7 +61162,6 @@ const multipartThreshold = 16 * Math.pow(1024, 2); // 16 MB
  */
 const multipartChunksize = 8 * Math.pow(1024, 2); // 8 MB
 
-const pipe$1 = (0,external_util_.promisify)(external_node_stream_namespaceObject.pipeline);
 /**
  * GZipping certain files that are already compressed will likely not yield further size reductions.
  * Creating large temporary gzip files then will just waste a lot of time before ultimately being
@@ -61262,7 +61261,7 @@ function compressOnDisk(filepath, tempFilepath, size) {
         const source = (0,external_fs_.createReadStream)(filepath);
         const gzip = external_zlib_default().createGzip();
         const destination = (0,external_fs_.createWriteStream)(tempFilepath);
-        yield pipe$1(source, gzip, destination);
+        yield (0,external_node_stream_promises_namespaceObject.pipeline)(source, gzip, destination);
         const { size: compressedSize } = yield (0,promises_namespaceObject.stat)(tempFilepath);
         let result;
         if (compressedSize < size) {
@@ -61351,7 +61350,6 @@ class StatusReporter {
     }
 }
 
-const pipe = (0,external_util_.promisify)(external_node_stream_namespaceObject.pipeline);
 class S3ArtifactClient {
     constructor(region, accessKeyId, secretAccessKey) {
         const clientConfig = {};
@@ -61412,8 +61410,7 @@ class S3ArtifactClient {
                         streams.push(external_zlib_default().createGunzip());
                     }
                     streams.push(destination);
-                    core.debug(`Download pipeline: ${streams}`);
-                    yield pipe(streams);
+                    yield (0,external_node_stream_promises_namespaceObject.pipeline)(...streams);
                     core.debug(`Downloaded file: ${relativePath}`);
                     this._statusReporter.incrementProcessedCount();
                 }
